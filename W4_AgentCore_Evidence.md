@@ -388,16 +388,28 @@ Return the final answer after tool results."
 - Câu hỏi:
 - Is NotificationSvc currently meeting its SLA targets?
 ![Question L3-1](./Evidence/Question%20L3-1.jpg)
+
 **Note**: Hệ thống đang tiếp nhận một câu hỏi [Is NotificationSvc currently meeting its SLA targets?]
+------------
 ![Question L3-2](./Evidence/Question%20L3-2.jpg)
+
 **Note**: Thay vì hỏi từng cái một, não bộ AI nhận ra: "Để kết luận hệ thống có đạt chuẩn hay không, tôi phải có 'điểm thi thực tế' và 'điểm chuẩn'". Thế là nó rút cùng lúc 2 công cụ ra: một tay gọi API để đo điểm thực tế (NotificationSvc) , một tay viết lệnh SQL(SELECT * FROM sla_targets WHERE service_name = 'NotificationSvc) lôi bảng điểm chuẩn ra để đối chiếu.
+------------
 ![Question L3-3](./Evidence/Question%20L3-3.jpg)
+
 **Note**: Agent đã thu thập thành công dữ liệu thời gian thực (p99 latency: 3081ms, error rate: 2.14%) từ API. Tuy nhiên, ở lệnh gọi SQL song song, Agent lại nhận về một thông báo lỗi từ cơ sở dữ liệu (no such column: service_name).
+--------  
 ![Question L3-4](./Evidence/Question%20L3-4.jpg)
+
 **Note**: Sau khi nhận được thông báo lỗi no such column: service_name ở vòng lặp trước, mô hình đã tự động phân tích và đưa ra một giả thuyết rất người: cột định danh có thể chỉ được đặt tên ngắn gọn là service. Dựa trên lập luận đó, khối toolUse ghi nhận AI đã tự động điều chỉnh lại cú pháp SQL (WHERE service = 'NotificationSvc') và phát lệnh gọi công cụ db_query lần thứ hai.
+--------
+
 ![Question L3-5](./Evidence/Question%20L3-5.jpg)
+
 **Note**: Nhờ lần tự sửa sai trước đó, nó đã lấy thành công 'Bảng điểm chuẩn' (SLA targets). Bây giờ, trong tay nó đang cầm cả 'Điểm thi thực tế' (p99: 3081, Lỗi: 2.14%) lẫn 'Điểm chuẩn' (p99: 2000, Lỗi: 1.0%).
+-----
 ![Question L3-6](./Evidence/Question%20L3-6.jpg)
+
 **Note**: AI đã đối chiếu chéo thành công hai tập dữ liệu (thực tế và tiêu chuẩn). Không chỉ đơn thuần so sánh, mô hình còn tự động thực hiện các phép toán (tính toán tỷ lệ vượt ngưỡng 115% và 54%) và thể hiện tư duy logic sắc bén khi nhận định: chỉ số 'availability' đo theo tháng nên không thể dùng dữ liệu phút để kết luận.
 ------
 
