@@ -385,11 +385,13 @@ def lambda_handler(event, context):
 Known services: PaymentGW, AuthSvc, OrderSvc, NotificationSvc, ReportingSvc, FraudDetector.
 Do not ask the user to confirm known service names.
 Return the final answer after tool results."
+- Các câu hỏi:
 - What is PaymentGW's current p99 latency? (Test tool: Service Metrics)
 ![Question L3-Service Metrics-1](./Evidence/Question%20L3-Service%20Metrics-1.jpg)
 **Note:** hệ thống đang tiếp nhận một câu hỏi [What is PaymentGW's current p99 latency?],Căn cứ vào chuỗi văn bản thô này, Agent bắt đầu quá trình Xử lý ngôn ngữ tự nhiên (NLP) để tự động nhận diện ý định tra cứu (live metrics) và trích xuất chính xác thực thể (PaymentGW) nhằm làm tham số đầu vào cho việc gọi Tool ở bước tiếp theo.
 ![Question L3-Service Metrics-2](./Evidence/Question%20L3-Service%20Metrics-2.jpg)
 **Note:** Agent ra quyết định và gọi công cụ (Tool Calling) của Agent sau khi hoàn tất quá trình phân tích ngữ nghĩa. Khối toolUse cho thấy thay vì cố gắng tự trả lời, AI đã chủ động chọn đúng hàm service_metrics và tự động định dạng tham số trích xuất được thành cấu trúc JSON chuẩn {"service_name":"PaymentGW"}.
+
 ![Question L3-Service Metrics-3](./Evidence/Question%20L3-Service%20Metrics-3.jpg)
 **Note:** Nó nhìn lại toàn bộ quá trình (câu hỏi + dữ liệu thô mà API vừa trả về), sau đó tự động lọc bỏ các chỉ số thừa để trích xuất đúng con số 186ms, chuẩn bị cho việc viết câu trả lời cuối cùng.
 ![Question L3-Service Metrics-4](./Evidence/Question%20L3-Service%20Metrics-4.jpg)
