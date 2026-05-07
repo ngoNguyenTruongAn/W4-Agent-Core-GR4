@@ -386,7 +386,8 @@ Known services: PaymentGW, AuthSvc, OrderSvc, NotificationSvc, ReportingSvc, Fra
 Do not ask the user to confirm known service names.
 Return the final answer after tool results."
 - Câu hỏi:
-- Is NotificationSvc currently meeting its SLA targets?
+**Is NotificationSvc currently meeting its SLA targets?**
+  -------
 ![Question L3-1](./Evidence/Question%20L3-1.jpg)
 
 **Note**: Hệ thống đang tiếp nhận một câu hỏi [Is NotificationSvc currently meeting its SLA targets?]
