@@ -385,30 +385,22 @@ def lambda_handler(event, context):
 Known services: PaymentGW, AuthSvc, OrderSvc, NotificationSvc, ReportingSvc, FraudDetector.
 Do not ask the user to confirm known service names.
 Return the final answer after tool results."
-- Các câu hỏi:
-- What is PaymentGW's current p99 latency? (Test tool: Service Metrics)
-![Question L3-Service Metrics-1](./Evidence/Question%20L3-Service%20Metrics-1.jpg)
-**Note:** hệ thống đang tiếp nhận một câu hỏi [What is PaymentGW's current p99 latency?],Căn cứ vào chuỗi văn bản thô này, Agent bắt đầu quá trình Xử lý ngôn ngữ tự nhiên (NLP) để tự động nhận diện ý định tra cứu (live metrics) và trích xuất chính xác thực thể (PaymentGW) nhằm làm tham số đầu vào cho việc gọi Tool ở bước tiếp theo.
-![Question L3-Service Metrics-2](./Evidence/Question%20L3-Service%20Metrics-2.jpg)
-**Note:** Agent ra quyết định và gọi công cụ (Tool Calling) của Agent sau khi hoàn tất quá trình phân tích ngữ nghĩa. Khối toolUse cho thấy thay vì cố gắng tự trả lời, AI đã chủ động chọn đúng hàm service_metrics và tự động định dạng tham số trích xuất được thành cấu trúc JSON chuẩn {"service_name":"PaymentGW"}.
+- Câu hỏi:
+- Is NotificationSvc currently meeting its SLA targets?
+![Question L3-1](./Evidence/Question%20L3-1.jpg)
+**Note**: Hệ thống đang tiếp nhận một câu hỏi [Is NotificationSvc currently meeting its SLA targets?]
+![Question L3-2](./Evidence/Question%20L3-2.jpg)
+**Note**: Thay vì hỏi từng cái một, não bộ AI nhận ra: "Để kết luận hệ thống có đạt chuẩn hay không, tôi phải có 'điểm thi thực tế' và 'điểm chuẩn'". Thế là nó rút cùng lúc 2 công cụ ra: một tay gọi API để đo điểm thực tế (NotificationSvc) , một tay viết lệnh SQL(SELECT * FROM sla_targets WHERE service_name = 'NotificationSvc) lôi bảng điểm chuẩn ra để đối chiếu.
+![Question L3-3](./Evidence/Question%20L3-3.jpg)
+**Note**: Agent đã thu thập thành công dữ liệu thời gian thực (p99 latency: 3081ms, error rate: 2.14%) từ API. Tuy nhiên, ở lệnh gọi SQL song song, Agent lại nhận về một thông báo lỗi từ cơ sở dữ liệu (no such column: service_name).
+![Question L3-4](./Evidence/Question%20L3-4.jpg)
+**Note**: Sau khi nhận được thông báo lỗi no such column: service_name ở vòng lặp trước, mô hình đã tự động phân tích và đưa ra một giả thuyết rất người: cột định danh có thể chỉ được đặt tên ngắn gọn là service. Dựa trên lập luận đó, khối toolUse ghi nhận AI đã tự động điều chỉnh lại cú pháp SQL (WHERE service = 'NotificationSvc') và phát lệnh gọi công cụ db_query lần thứ hai.
+![Question L3-5](./Evidence/Question%20L3-5.jpg)
+**Note**: Nhờ lần tự sửa sai trước đó, nó đã lấy thành công 'Bảng điểm chuẩn' (SLA targets). Bây giờ, trong tay nó đang cầm cả 'Điểm thi thực tế' (p99: 3081, Lỗi: 2.14%) lẫn 'Điểm chuẩn' (p99: 2000, Lỗi: 1.0%).
+![Question L3-6](./Evidence/Question%20L3-6.jpg)
+**Note**: AI đã đối chiếu chéo thành công hai tập dữ liệu (thực tế và tiêu chuẩn). Không chỉ đơn thuần so sánh, mô hình còn tự động thực hiện các phép toán (tính toán tỷ lệ vượt ngưỡng 115% và 54%) và thể hiện tư duy logic sắc bén khi nhận định: chỉ số 'availability' đo theo tháng nên không thể dùng dữ liệu phút để kết luận.
+------
 
-![Question L3-Service Metrics-3](./Evidence/Question%20L3-Service%20Metrics-3.jpg)
-**Note:** Nó nhìn lại toàn bộ quá trình (câu hỏi + dữ liệu thô mà API vừa trả về), sau đó tự động lọc bỏ các chỉ số thừa để trích xuất đúng con số 186ms, chuẩn bị cho việc viết câu trả lời cuối cùng.
-![Question L3-Service Metrics-4](./Evidence/Question%20L3-Service%20Metrics-4.jpg)
-**Note:** Agent đang "Viết báo cáo tổng kết". Nó lấy số liệu đã lọc được, lắp vào một câu hoàn chỉnh đúng form quy định, rồi chính thức đóng luồng xử lý lại
-----
-- What was GeekBrain's total infrastructure cost across all services in Q1 2026? (Test tool: Database Query)
-![Question L3-Database Query-1](./Evidence/Question%20L3-Database%20Query-1.jpg)
-**Note:** hệ thống đang tiếp nhận một câu hỏi [What was GeekBrain's total infrastructure cost across all services in Q1 2026?]
-![Question L3-Database Query-2](./Evidence/Question%20L3-Database%20Query-2.jpg)
-**Note:** AI đã quyết định gọi công cụ db_query. Agent đã tự động bóc tách các yêu cầu 'total cost', 'Q1' và '2026', sau đó biên dịch chúng thành một câu lệnh SQL hoàn chỉnh, chuẩn cú pháp (SELECT SUM(cost) as total_cost FROM costs WHERE quarter = 'Q1' AND year = 2026). rồi bấm nút gọi Tool để truy cập vào Database lấy số liệu
-![Question L3-Database Query-3](./Evidence/Question%20L3-Database%20Query-3.jpg)
-![Question L3-Database Query-4](./Evidence/Question%20L3-Database%20Query-4.jpg)
-- Is NotificationSvc currently meeting its SLA targets? (Test tool: Service Metrics + Database Query)
-![Question L3-Service Metrics + Database Query-1](./Evidence/Question%20L3-Service%20Metrics%20+%20Database%20Query-1.jpg)
-![Question L3-Service Metrics + Database Query-2](./Evidence/Question%20L3-Service%20Metrics%20+%20Database%20Query-2.jpg)
-![Question L3-Service Metrics + Database Query-3](./Evidence/Question%20L3-Service%20Metrics%20+%20Database%20Query-3.jpg)
------
 Log tool Cloud Watch:
 - CW tool Service Metrics:
 ![CW Service Metrics-1](./Evidence/CW%20Service%20Metrics-1.jpg)
