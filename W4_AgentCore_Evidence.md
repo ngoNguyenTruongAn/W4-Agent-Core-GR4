@@ -1,7 +1,7 @@
 ## Agent Core Bedrock
 
 ## L1
-I. Tao S3 va upload 36 file md
+I. Tạo S3 và upload 36 file md
 1. AWS Console -> S3 -> Create bucket.
 2. Đặt tên bucket -> Create bucket
 3. Mở bucket vừa tạo -> Upload -> chọn tât cả 36 file trong knowledge_base/ -> Upload.
@@ -219,6 +219,194 @@ def lambda_handler(event, context):
 ![permissions Lambda1](./Evidence/permissions%20Lambda1.jpg)
 ----
 ![permissions Lambda2](./Evidence/permissions%20Lambda2.jpg)
+4) Add permission ở Agent
+- Vào lại phần giao diện Agent detail của mình, ở phần Agent overview -> Permissions -> vào IAM role của Agent
+- Click vào Add permissions -> Create inline policy và chỉnh sửa policy editor (Json) như sau:
+![permissions Agent](./Evidence/permissions%20Agent.jpg)
+5) Chỉnh sửa Action groups - Thêm Parameters
+- Vào Agent của mình, Click Edit in Agent Builder
+- Click vào Action group db_query, kéo xuống phần Parameters -> Click Add parameters và Add như sau:
+![Parameters db_query](./Evidence/Parameters%20db_query.jpg) 
+-> Save and Exit
+- Tương tự vào Action group service_metrics -> Add parameters như sau:
+![Parameters service_metrics](./Evidence/Parameters%20db_query.jpg)
+-> Save and Exit
+6) Cấu hình lại hàm lambda để tránh lỗi Missing parameter và chỉnh lại định dạng phản hồi
+- Cập nhật code lambda_handler để duyệt qua mảng event['parameters'] nhằm lấy giá trị của service_name hoặc sql mà hình đã tạo ở action group, và chỉnh lại định dạng phản hồi cho Agent
+- Code ở lambda get-service-metrics:
+import json
+import os
+import urllib.request
+
+def _agent_response(event, body_text):
+    
+    return {
+        "response": {
+            "actionGroup": event.get("actionGroup", ""),
+            "function": event.get("function", ""),
+            "functionResponse": {
+                "responseBody": {
+                    "TEXT": {
+                        "body": body_text
+                    }
+                }
+            }
+        }
+    }
+
+def lambda_handler(event, context):
+    # 1. Log event để debug trong CloudWatch (cần thiết cho Evidence Pack)
+    print(f"Received event: {json.dumps(event)}")
+    
+    # 2. Trích xuất service_name từ danh sách parameters của Bedrock Agent[cite: 2]
+    parameters = event.get("parameters", [])
+    service = None
+    for p in parameters:
+        if p["name"] == "service_name":
+            service = p["value"]
+            break
+
+    # Kiểm tra nếu không tìm thấy tham số service_name
+    if not service:
+        error_msg = "Error: Missing required parameter 'service_name'."
+        print(error_msg)
+        return _agent_response(event, json.dumps({"error": error_msg}))
+
+    # 3. Lấy Base URL từ Environment Variable 
+    base_url = os.environ.get("API_BASE_URL", "").rstrip("/")
+    if not base_url:
+        error_msg = "Error: Environment variable API_BASE_URL is not set."
+        print(error_msg)
+        return _agent_response(event, json.dumps({"error": error_msg}))
+
+    url = f"{base_url}/metrics/{service}"
+    print(f"Calling Monitoring API: {url}")
+
+    # 4. Thực hiện gọi API thông qua ngrok
+    try:
+        req = urllib.request.Request(url)
+        # Thêm timeout để tránh Lambda bị treo quá lâu
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            status_code = resp.getcode()
+            response_data = resp.read().decode("utf-8")
+            data = json.loads(response_data)
+            
+            print(f"API Success (Status {status_code}): {response_data}")
+            return _agent_response(event, json.dumps({"metrics": data}, ensure_ascii=False))
+            
+    except urllib.error.HTTPError as e:
+        error_msg = f"HTTP Error: {e.code} - {e.reason}"
+        print(error_msg)
+        return _agent_response(event, json.dumps({"error": error_msg}))
+    except Exception as exc:
+        error_msg = f"Connection Error: {str(exc)}"
+        print(error_msg)
+        return _agent_response(event, json.dumps({"error": error_msg}))
+
+- Code ở lambda query-database:
+import json
+import os
+import sqlite3
+import boto3
+
+s3 = boto3.client("s3")
+DB_LOCAL_PATH = "/tmp/geekbrain.db"
+
+def _agent_response(event, body_text):
+    return {
+        "response": {
+            "actionGroup": event.get("actionGroup", ""),
+            "function": event.get("function", ""),
+            "functionResponse": {
+                "responseBody": {
+                    "TEXT": {
+                        "body": body_text
+                    }
+                }
+            }
+        }
+    }
+
+def _download_db():
+    bucket = os.environ["DB_BUCKET"]
+    key = os.environ["DB_KEY"]
+    s3.download_file(bucket, key, DB_LOCAL_PATH)
+
+def _validate_sql(sql):
+    sql_lower = sql.strip().lower()
+    if not sql_lower.startswith("select"):
+        raise ValueError("Only SELECT is allowed.")
+    return sql
+
+def lambda_handler(event, context):
+    # Log event để bạn có thể kiểm tra trong CloudWatch Logs
+    print(f"Received event: {json.dumps(event)}")
+    
+    # --- CÁCH LẤY THAM SỐ ĐÚNG CHO BEDROCK AGENT ---
+    parameters = event.get("parameters", [])
+    sql = None
+    for p in parameters:
+        if p["name"] == "sql":
+            sql = p["value"]
+            break
+
+    if not sql:
+        return _agent_response(event, json.dumps({"error": "Missing sql parameter in 'parameters' list"}))
+
+    try:
+        # Làm sạch SQL (đôi khi AI bao quanh bằng markdown ```sql)
+        sql = sql.replace('```sql', '').replace('```', '').strip()
+        
+        _validate_sql(sql)
+        
+        # Tối ưu: Chỉ download nếu file chưa có trong /tmp/
+        if not os.path.exists(DB_LOCAL_PATH):
+            _download_db()
+
+        conn = sqlite3.connect(DB_LOCAL_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        print(f"Executing SQL: {sql}")
+        cur.execute(sql)
+        rows = [dict(r) for r in cur.fetchall()]
+        conn.close()
+
+        return _agent_response(event, json.dumps({"rows": rows}, ensure_ascii=False))
+    except Exception as exc:
+        print(f"Error executing query: {str(exc)}")
+        return _agent_response(event, json.dumps({"error": str(exc)}))
+
+7) Prepare lại Agent và test các Question L3
+**Bổ sung**: chỉnh lại phần Instructions for the Agent để đảm bảo Agent sử dụng tool để xử lí như sau:
+"You must use tools for data not in KB.
+- For live metrics, always call service_metrics with service_name.
+- For historical costs/SLA/incidents, always call db_query with SQL.
+Known services: PaymentGW, AuthSvc, OrderSvc, NotificationSvc, ReportingSvc, FraudDetector.
+Do not ask the user to confirm known service names.
+Return the final answer after tool results."
+- What is PaymentGW's current p99 latency? (Test tool: Service Metrics)
+![Question L3-Service Metrics-1](./Evidence/Question%20L3-Service%20Metrics-1.jpg)
+![Question L3-Service Metrics-2](./Evidence/Question%20L3-Service%20Metrics-2.jpg)
+----
+- What was GeekBrain's total infrastructure cost across all services in Q1 2026? (Test tool: Database Query)
+![Question L3-Database Query-1](./Evidence/Question%20L3-Service%20Metrics-1.jpg)
+![Question L3-Database Query-2](./Evidence/Question%20L3-Service%20Metrics-2.jpg)
+![Question L3-Database Query-3](./Evidence/Question%20L3-Database%20Query-3.jpg)
+![Question L3-Database Query-4](./Evidence/Question%20L3-Database%20Query-4.jpg)
+- Is NotificationSvc currently meeting its SLA targets? (Test tool: Service Metrics + Database Query)
+![Question L3-Service Metrics + Database Query-1](./Evidence/Question%20L3-Service%20Metrics%20+%20Database%20Query-1.jpg)
+![Question L3-Service Metrics + Database Query-2](./Evidence/Question%20L3-Service%20Metrics%20+%20Database%20Query-2.jpg)
+![Question L3-Service Metrics + Database Query-3](./Evidence/Question%20L3-Service%20Metrics%20+%20Database%20Query-3.jpg)
+-----
+Log tool Cloud Watch:
+- CW tool Service Metrics:
+![CW Service Metrics-1](./Evidence/CW%20Service%20Metrics-1.jpg)
+![CW Service Metrics-2](./Evidence/CW%20Service%20Metrics-2.jpg)
+- CW tool Database Query:
+![CW Database Query-1](./Evidence/CW%20Database%20Query-1.jpg)
+![CW Database Query-2](./Evidence/CW%20Database%20Query-2.jpg)
+
 
 
 
